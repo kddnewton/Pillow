@@ -161,15 +161,15 @@ typedef struct ImagingMemoryArena {
     int stats_reallocated_blocks; /* Number of blocks which were actually reallocated
                                      after retrieving */
     int stats_freed_blocks;       /* Number of freed blocks */
-#ifdef Py_GIL_DISABLED
-    PyMutex mutex;
-#endif
 } *ImagingMemoryArena;
 
 /* Objects */
 /* ------- */
 
-extern struct ImagingMemoryArena ImagingDefaultArena;
+extern int
+ImagingMemoryArenaInit(void);
+extern ImagingMemoryArena
+ImagingDefaultArena(void);
 extern int
 ImagingMemorySetBlocksMax(ImagingMemoryArena arena, int blocks_max);
 extern void

@@ -218,9 +218,12 @@ ImagingNewPrologueSubtype(const char *mode, int xsize, int ysize, int size) {
             break;
     }
 
-    MUTEX_LOCK(&ImagingDefaultArena.mutex);
-    ImagingDefaultArena.stats_new_count += 1;
-    MUTEX_UNLOCK(&ImagingDefaultArena.mutex);
+    ImagingMemoryArena arena = ImagingDefaultArena();
+    if (!arena) {
+        return NULL;
+    }
+
+    arena->stats_new_count += 1;
 
     return im;
 }
@@ -257,23 +260,56 @@ ImagingDelete(Imaging im) {
 /* ------------------ */
 /* Allocate image as an array of line buffers. */
 
-#define IMAGING_PAGE_SIZE (4096)
+#include "Threading.h"
 
-struct ImagingMemoryArena ImagingDefaultArena = {
-    1,                 // alignment
-    16 * 1024 * 1024,  // block_size
-    0,                 // blocks_max
-    0,                 // blocks_cached
-    NULL,              // blocks_pool
-    0,
-    0,
-    0,
-    0,
-    0,  // Stats
-#ifdef Py_GIL_DISABLED
-    {0},
-#endif
-};
+static threading_key_t ImagingMemoryArenaKey;
+
+ImagingMemoryArena
+ImagingDefaultArena(void) {
+    ImagingMemoryArena arena = threading_get(ImagingMemoryArenaKey);
+
+    if (arena == NULL) {
+        arena = malloc(sizeof(*arena));
+        if (!arena) {
+            (void) ImagingError_MemoryError();
+            return NULL;
+        }
+
+        *arena = (struct ImagingMemoryArena){
+            1,                 // alignment
+            16 * 1024 * 1024,  // block_size
+            0,                 // blocks_max
+            0,                 // blocks_cached
+            NULL,              // blocks_pool
+            0,
+            0,
+            0,
+            0,
+            0,  // Stats
+        };
+
+        if (threading_set(ImagingMemoryArenaKey, arena) != 0) {
+            (void) ImagingError_MemoryError();
+            free(arena);
+            return NULL;
+        }
+    }
+
+    return arena;
+}
+
+static void
+ImagingDefaultArenaCleanup(void *arena) {
+    free(((ImagingMemoryArena)arena)->blocks_pool);
+    free(arena);
+}
+
+int
+ImagingMemoryArenaInit(void) {
+    return threading_init(&ImagingMemoryArenaKey, ImagingDefaultArenaCleanup);
+}
+
+#define IMAGING_PAGE_SIZE (4096)
 
 int
 ImagingMemorySetBlocksMax(ImagingMemoryArena arena, int blocks_max) {
@@ -369,12 +405,17 @@ ImagingDestroyArray(Imaging im) {
     int y = 0;
 
     if (im->blocks) {
-        MUTEX_LOCK(&ImagingDefaultArena.mutex);
+        ImagingMemoryArena arena = ImagingDefaultArena();
+
+        /* Asserting here instead of raising an error because expect that if we
+         * have entered this function that the arena has already been allocated.
+         */
+        assert(arena);
+
         while (im->blocks[y].ptr) {
-            memory_return_block(&ImagingDefaultArena, im->blocks[y]);
+            memory_return_block(arena, im->blocks[y]);
             y += 1;
         }
-        MUTEX_UNLOCK(&ImagingDefaultArena.mutex);
         free(im->blocks);
     }
 }
@@ -504,11 +545,14 @@ ImagingNewInternal(const char *mode, int xsize, int ysize, int dirty) {
         return NULL;
     }
 
-    MUTEX_LOCK(&ImagingDefaultArena.mutex);
+    ImagingMemoryArena arena = ImagingDefaultArena();
+    if (!arena) {
+        return NULL;
+    }
+
     Imaging tmp = ImagingAllocateArray(
-        im, &ImagingDefaultArena, dirty, ImagingDefaultArena.block_size
+        im, arena, dirty, arena->block_size
     );
-    MUTEX_UNLOCK(&ImagingDefaultArena.mutex);
     if (tmp) {
         return im;
     }
@@ -516,9 +560,7 @@ ImagingNewInternal(const char *mode, int xsize, int ysize, int dirty) {
     ImagingError_Clear();
 
     // Try to allocate the image once more with smallest possible block size
-    MUTEX_LOCK(&ImagingDefaultArena.mutex);
-    tmp = ImagingAllocateArray(im, &ImagingDefaultArena, dirty, IMAGING_PAGE_SIZE);
-    MUTEX_UNLOCK(&ImagingDefaultArena.mutex);
+    tmp = ImagingAllocateArray(im, arena, dirty, IMAGING_PAGE_SIZE);
     if (tmp) {
         return im;
     }
