@@ -52,17 +52,17 @@ extern "C" {
  */
 
 #ifdef Py_GIL_DISABLED
-    #if defined(__cplusplus)
-    #define IMAGING_TLS thread_local
-    #elif defined(HAVE_THREAD_LOCAL)
-    #define IMAGING_TLS thread_local
-    #elif defined(HAVE__THREAD_LOCAL)
-    #define IMAGING_TLS _Thread_local
-    #elif defined(HAVE___THREAD)
-    #define IMAGING_TLS __thread
-    #elif defined(HAVE___DECLSPEC_THREAD_)
-    #define IMAGING_TLS __declspec(thread)
-    #endif
+#if defined(__cplusplus)
+#define IMAGING_TLS thread_local
+#elif defined(HAVE_THREAD_LOCAL)
+#define IMAGING_TLS thread_local
+#elif defined(HAVE__THREAD_LOCAL)
+#define IMAGING_TLS _Thread_local
+#elif defined(HAVE___THREAD)
+#define IMAGING_TLS __thread
+#elif defined(HAVE___DECLSPEC_THREAD_)
+#define IMAGING_TLS __declspec(thread)
+#endif
 #endif
 
 /* Handles */
@@ -200,8 +200,9 @@ extern struct ImagingMemoryArena ImagingArenas[IMAGING_ARENAS_COUNT];
 /* Provide a macro that loops through each arena that has been
  * statically-allocated. This is necessary to properly handle stats.
  */
-#define IMAGING_ARENAS_FOREACH(index, arena) \
-    for (index = 0, (arena) = &ImagingArenas[index]; index < IMAGING_ARENAS_COUNT; (arena) = &ImagingArenas[++index])
+#define IMAGING_ARENAS_FOREACH(index, arena)                                       \
+    for (index = 0, (arena) = &ImagingArenas[index]; index < IMAGING_ARENAS_COUNT; \
+         (arena) = &ImagingArenas[++index])
 #else
 /* In this case we either have the GIL or do not have thread-local storage, in
  * which case we will only allocate a single arena.
@@ -213,10 +214,11 @@ extern struct ImagingMemoryArena ImagingDefaultArena;
  * effectively a single block of code.
  */
 #define IMAGING_ARENAS_FOREACH(index, arena) \
-    for ((void) index, (arena) = &ImagingDefaultArena; (arena); (arena) = NULL)
+    for ((void)index, (arena) = &ImagingDefaultArena; (arena); (arena) = NULL)
 #endif
 
-ImagingMemoryArena ImagingGetArena(void);
+ImagingMemoryArena
+ImagingGetArena(void);
 
 extern int
 ImagingMemorySetBlocksMax(ImagingMemoryArena arena, int blocks_max);
